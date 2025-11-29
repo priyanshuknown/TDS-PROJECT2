@@ -22,7 +22,11 @@ if api_key:
     openai_client = OpenAI(api_key=api_key)
 elif gemini_key:
     genai.configure(api_key=gemini_key)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    # Try to initialize the best available model
+    try:
+        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    except:
+        gemini_model = genai.GenerativeModel('gemini-pro')
 else:
     print("WARNING: No valid API Token (AIPROXY_TOKEN or GEMINI_API_KEY) found. LLM features will be limited.")
 
@@ -81,6 +85,41 @@ def get_page_content(url):
         browser.close()
     return content
 
+def get_gemini_response(prompt, json_mode=False):
+    global gemini_model
+    # List of models to try in order of preference
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro', 'gemini-1.0-pro']
+
+    # If we already have a working model, try it first
+    if gemini_model:
+        try:
+            if json_mode:
+                response = gemini_model.generate_content(prompt + "\n\nOutput strictly valid JSON.")
+            else:
+                response = gemini_model.generate_content(prompt)
+            return response
+        except Exception as e:
+            print(f"Gemini error with current model: {e}")
+            gemini_model = None # Reset to try others
+
+    # Try finding a working model
+    for model_name in models_to_try:
+        try:
+            print(f"Trying Gemini model: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            if json_mode:
+                response = model.generate_content(prompt + "\n\nOutput strictly valid JSON.")
+            else:
+                response = model.generate_content(prompt)
+
+            # If successful, save this model for future use
+            gemini_model = model
+            return response
+        except Exception as e:
+            print(f"Failed with {model_name}: {e}")
+
+    return None
+
 def parse_task_with_llm(content):
     prompt = f"""
     Analyze the following text from a quiz page:
@@ -109,13 +148,13 @@ def parse_task_with_llm(content):
             print(f"Error parsing task with OpenAI: {e}")
             return None
 
-    elif gemini_model:
+    elif gemini_key:
         try:
-            response = gemini_model.generate_content(prompt + "\n\nJSON:")
-            # Extract JSON from potential markdown code blocks
-            text = response.text
-            text = clean_code(text) # Reusing clean_code as it handles removing backticks
-            return json.loads(text)
+            response = get_gemini_response(prompt, json_mode=True)
+            if response:
+                text = response.text
+                text = clean_code(text)
+                return json.loads(text)
         except Exception as e:
             print(f"Error parsing task with Gemini: {e}")
             return None
@@ -172,7 +211,7 @@ def solve_question(question):
              except Exception as e:
                  print(f"Scrape error: {e}")
 
-    if not openai_client and not gemini_model:
+    if not openai_client and not gemini_key:
         print("Cannot solve complex question without LLM.")
         return None
 
@@ -198,9 +237,10 @@ def solve_question(question):
                 messages=[{"role": "user", "content": prompt}]
             )
             code = response.choices[0].message.content
-        elif gemini_model:
-            response = gemini_model.generate_content(prompt)
-            code = response.text
+        elif gemini_key:
+            response = get_gemini_response(prompt)
+            if response:
+                code = response.text
 
         if code:
             code = clean_code(code)

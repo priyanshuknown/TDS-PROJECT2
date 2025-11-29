@@ -12,7 +12,7 @@ class QuizRequest(BaseModel):
     url: str
 
 # Define the secret for the API endpoint verification
-MY_SECRET = "jules_secret_123"
+MY_SECRET = "UNKNOWN"
 
 @app.post("/run")
 async def run_quiz(request: QuizRequest, background_tasks: BackgroundTasks):

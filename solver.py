@@ -3,6 +3,7 @@ import json
 import requests
 from playwright.sync_api import sync_playwright
 from openai import OpenAI
+import google.generativeai as genai
 import base64
 import re
 import sys
@@ -10,13 +11,20 @@ from io import StringIO
 import contextlib
 import subprocess
 
-# Initialize OpenAI client
+# Initialize LLM Clients
+openai_client = None
+gemini_model = None
+
 api_key = os.environ.get("AIPROXY_TOKEN")
+gemini_key = os.environ.get("GEMINI_API_KEY")
+
 if api_key:
-    client = OpenAI(api_key=api_key)
+    openai_client = OpenAI(api_key=api_key)
+elif gemini_key:
+    genai.configure(api_key=gemini_key)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    print("WARNING: AIPROXY_TOKEN not found. LLM features will be limited.")
-    client = None
+    print("WARNING: No valid API Token (AIPROXY_TOKEN or GEMINI_API_KEY) found. LLM features will be limited.")
 
 def solve_quiz_task(email, secret, start_url):
     current_url = start_url
@@ -74,30 +82,44 @@ def get_page_content(url):
     return content
 
 def parse_task_with_llm(content):
-    if client:
-        prompt = f"""
-        Analyze the following text from a quiz page:
+    prompt = f"""
+    Analyze the following text from a quiz page:
 
-        ---
-        {content}
-        ---
+    ---
+    {content}
+    ---
 
-        Extract the following information in JSON format:
-        1. "question": The question to be solved.
-        2. "submit_url": The URL to post the answer to.
-        3. "answer_key": The JSON key expected for the answer (e.g., "answer", "result").
-        """
+    Extract the following information in JSON format:
+    1. "question": The question to be solved.
+    2. "submit_url": The URL to post the answer to.
+    3. "answer_key": The JSON key expected for the answer (e.g., "answer", "result").
 
+    Return ONLY valid JSON.
+    """
+
+    if openai_client:
         try:
-            response = client.chat.completions.create(
+            response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"}
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
-            print(f"Error parsing task with LLM: {e}")
+            print(f"Error parsing task with OpenAI: {e}")
             return None
+
+    elif gemini_model:
+        try:
+            response = gemini_model.generate_content(prompt + "\n\nJSON:")
+            # Extract JSON from potential markdown code blocks
+            text = response.text
+            text = clean_code(text) # Reusing clean_code as it handles removing backticks
+            return json.loads(text)
+        except Exception as e:
+            print(f"Error parsing task with Gemini: {e}")
+            return None
+
     else:
         # Fallback for demo without API key
         if "Scrape" in content and "secret code" in content:
@@ -137,11 +159,11 @@ def solve_question(question):
 
              print(f"Scraping {full_url}")
              try:
-                 resp = requests.get(full_url)
-                 text = resp.text
-                 print(f"Scraped text: {text}")
+                 # Use Playwright instead of requests because the page renders with JS
+                 content = get_page_content(full_url)
+                 print(f"Scraped text: {content}")
                  # Extract code: "Secret code is 25511 and not 25535."
-                 code_match = re.search(r"Secret code is (\d+)", text)
+                 code_match = re.search(r"Secret code is\s*(\d+)", content)
                  if code_match:
                      print(f"Found code: {code_match.group(1)}")
                      return int(code_match.group(1))
@@ -150,7 +172,7 @@ def solve_question(question):
              except Exception as e:
                  print(f"Scrape error: {e}")
 
-    if not client:
+    if not openai_client and not gemini_model:
         print("Cannot solve complex question without LLM.")
         return None
 
@@ -168,26 +190,32 @@ def solve_question(question):
     Return ONLY the python code in a code block.
     """
 
+    code = None
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
+        if openai_client:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            code = response.choices[0].message.content
+        elif gemini_model:
+            response = gemini_model.generate_content(prompt)
+            code = response.text
 
-        code = response.choices[0].message.content
-        code = clean_code(code)
+        if code:
+            code = clean_code(code)
 
-        with open("temp_solution.py", "w") as f:
-            f.write(code)
+            with open("temp_solution.py", "w") as f:
+                f.write(code)
 
-        result = subprocess.run(["python3", "temp_solution.py"], capture_output=True, text=True, timeout=60)
+            result = subprocess.run(["python3", "temp_solution.py"], capture_output=True, text=True, timeout=60)
 
-        if result.returncode != 0:
-            print("Execution error:", result.stderr)
-            return None
+            if result.returncode != 0:
+                print("Execution error:", result.stderr)
+                return None
 
-        output = result.stdout.strip().split('\n')[-1]
-        return parse_answer(output)
+            output = result.stdout.strip().split('\n')[-1]
+            return parse_answer(output)
 
     except Exception as e:
         print(f"Error executing solution: {e}")
@@ -198,6 +226,16 @@ def clean_code(text):
         text = text.split("```python")[1].split("```")[0]
     elif "```" in text:
         text = text.split("```")[1].split("```")[0]
+    # Handle cases where markdown is just ```
+    elif "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 3:
+             text = parts[1]
+
+    # Strip any leading 'python' if it was part of the block tag but not caught above
+    if text.startswith("python"):
+        text = text[6:]
+
     return text.strip()
 
 def parse_answer(output):

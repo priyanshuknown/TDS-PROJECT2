@@ -1,21 +1,27 @@
 # LLM Analysis Quiz Solver
 
-This project implements an automated quiz solver for the "LLM Analysis Quiz". It exposes a FastAPI endpoint that accepts quiz tasks, solves them using Playwright and an LLM (OpenAI), and submits the results.
+This project implements an automated quiz solver for the "LLM Analysis Quiz". It exposes a FastAPI endpoint that accepts quiz tasks, solves them using Playwright and an LLM (OpenAI or Google Gemini), and submits the results.
 
 ## Prerequisites
 
 - **Python 3.12+**
 - **Playwright Browsers** (`playwright install chromium`)
-- **OpenAI API Key** (or compatible `AIPROXY_TOKEN`)
+- **LLM API Key** (OpenAI `AIPROXY_TOKEN` OR Google `GEMINI_API_KEY`)
 
 ## Setup & Running
 
 ### Environment Variables
 
-The application requires the `AIPROXY_TOKEN` environment variable to function correctly for the actual quiz.
+The application requires **one** of the following environment variables to function correctly for the actual quiz.
 
+**Option 1: OpenAI (via Proxy)**
 ```bash
 export AIPROXY_TOKEN="your-api-key-here"
+```
+
+**Option 2: Google Gemini**
+```bash
+export GEMINI_API_KEY="your-gemini-api-key"
 ```
 
 ### Running Locally
@@ -51,6 +57,8 @@ export AIPROXY_TOKEN="your-api-key-here"
 
 2. Run the container (passing the API key):
    ```bash
+   docker run -p 8000:8000 -e GEMINI_API_KEY=$GEMINI_API_KEY quiz-solver
+   # OR
    docker run -p 8000:8000 -e AIPROXY_TOKEN=$AIPROXY_TOKEN quiz-solver
    ```
 
@@ -66,32 +74,11 @@ To submit this project, you need a public HTTPS URL (e.g., `https://your-app.onr
 4. Connect your GitHub repository.
 5. Select **Docker** as the Runtime.
 6. Under **Environment Variables**, add:
-   - Key: `AIPROXY_TOKEN`
+   - Key: `GEMINI_API_KEY` (or `AIPROXY_TOKEN`)
    - Value: `your-actual-api-key`
 7. Click **Create Web Service**.
 8. Once deployed, your URL will be something like `https://project-name.onrender.com`.
 9. Your API Endpoint URL for the form will be: `https://project-name.onrender.com/run`.
-
-### Option B: Deploy to Fly.io
-
-1. Install `flyctl` and login.
-2. Run `fly launch` in the project directory.
-3. It will detect the Dockerfile.
-4. Set the secret:
-   ```bash
-   fly secrets set AIPROXY_TOKEN=your-actual-api-key
-   ```
-5. Deploy: `fly deploy`.
-
-### Option C: VPS (DigitalOcean, AWS EC2, etc.)
-
-1. Provision a server with Docker installed.
-2. Clone the repo and build the Docker image.
-3. Run the container mapping port 80 to 8000 (or use a reverse proxy like Nginx/Traefik for HTTPS).
-   ```bash
-   docker run -d -p 80:8000 -e AIPROXY_TOKEN=your-key quiz-solver
-   ```
-   *Note: For HTTPS on a VPS, you will need to set up SSL certificates (e.g., via Let's Encrypt).*
 
 ## How it Works
 
@@ -99,7 +86,7 @@ To submit this project, you need a public HTTPS URL (e.g., `https://your-app.onr
 2. **Solver**: The `solver.py` script runs as a background task.
    - It navigates to the quiz URL using Playwright.
    - It extracts the page content.
-   - It uses the LLM (GPT-4o-mini) to parse the question and determine the submission URL.
+   - It uses the LLM (GPT-4o-mini or Gemini 1.5 Flash) to parse the question and determine the submission URL.
    - It uses the LLM to generate Python code to solve the specific data analysis question (e.g., scraping, parsing CSVs, calculating sums).
    - It executes the generated code in a subprocess.
    - It submits the answer and follows the next URL if provided.

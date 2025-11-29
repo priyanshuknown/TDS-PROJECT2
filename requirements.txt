@@ -4,6 +4,7 @@ playwright
 requests
 pandas
 openai
+google-generativeai
 python-multipart
 httpx
 beautifulsoup4

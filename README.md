@@ -54,6 +54,45 @@ export AIPROXY_TOKEN="your-api-key-here"
    docker run -p 8000:8000 -e AIPROXY_TOKEN=$AIPROXY_TOKEN quiz-solver
    ```
 
+## Deployment
+
+To submit this project, you need a public HTTPS URL (e.g., `https://your-app.onrender.com/run`). Since the application requires system-level dependencies for Playwright (browsers), a **Docker-based deployment** is recommended.
+
+### Option A: Deploy to Render (Recommended)
+
+1. Push this repository to GitHub.
+2. Create a new account/login at [Render.com](https://render.com).
+3. Click **New +** -> **Web Service**.
+4. Connect your GitHub repository.
+5. Select **Docker** as the Runtime.
+6. Under **Environment Variables**, add:
+   - Key: `AIPROXY_TOKEN`
+   - Value: `your-actual-api-key`
+7. Click **Create Web Service**.
+8. Once deployed, your URL will be something like `https://project-name.onrender.com`.
+9. Your API Endpoint URL for the form will be: `https://project-name.onrender.com/run`.
+
+### Option B: Deploy to Fly.io
+
+1. Install `flyctl` and login.
+2. Run `fly launch` in the project directory.
+3. It will detect the Dockerfile.
+4. Set the secret:
+   ```bash
+   fly secrets set AIPROXY_TOKEN=your-actual-api-key
+   ```
+5. Deploy: `fly deploy`.
+
+### Option C: VPS (DigitalOcean, AWS EC2, etc.)
+
+1. Provision a server with Docker installed.
+2. Clone the repo and build the Docker image.
+3. Run the container mapping port 80 to 8000 (or use a reverse proxy like Nginx/Traefik for HTTPS).
+   ```bash
+   docker run -d -p 80:8000 -e AIPROXY_TOKEN=your-key quiz-solver
+   ```
+   *Note: For HTTPS on a VPS, you will need to set up SSL certificates (e.g., via Let's Encrypt).*
+
 ## How it Works
 
 1. **Endpoint**: The `/run` endpoint accepts the initial quiz URL and user credentials.

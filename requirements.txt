@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+playwright
+requests
+pandas
+openai
+python-multipart
+httpx
+beautifulsoup4
